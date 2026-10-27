@@ -112,6 +112,32 @@ jobs:
           APP_PATH="$APP_ROOT/$APP_NAME" node build/darwin/verify-macho.ts universal
         displayName: Verify arch of Mach-O objects
 
+      # VALIDATION ONLY (do not merge): fail the first `codesign --timestamp` call for the server only (the app retry is covered by #344512)
+      # with Apple's timestamp error, so the signing retry has to fire.
+      - script: |
+          set -e
+          SHIM_DIR="$(Agent.TempDirectory)/codesign-shim"
+          mkdir -p "$SHIM_DIR"
+          REAL="$(command -v codesign)"
+          cat > "$SHIM_DIR/codesign" <<EOF
+          #!/bin/bash
+          case " \$* " in
+            *" --timestamp "*)
+              case "\$*" in *vscode-server-darwin*) key=server ;; *) exec "$REAL" "\$@" ;; esac
+              f="$SHIM_DIR/failed-\$key"
+              if [ ! -f "\$f" ]; then
+                touch "\$f"
+                echo "CODESIGN-SHIM: forced timestamp failure for \$key" >&2
+                echo "\${@: -1}: A timestamp was expected but was not found." >&2
+                exit 1
+              fi ;;
+          esac
+          exec "$REAL" "\$@"
+          EOF
+          chmod +x "$SHIM_DIR/codesign"
+          echo "##vso[task.prependpath]$SHIM_DIR"
+          echo "Installed codesign shim in front of $REAL"
+        displayName: "VALIDATION: install failing codesign shim"
       - script: |
           set -e
           security create-keychain -p pwd $(agent.tempdirectory)/buildagent.keychain
