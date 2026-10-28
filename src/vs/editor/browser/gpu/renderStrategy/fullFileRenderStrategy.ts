@@ -245,12 +245,14 @@ export class FullFileRenderStrategy extends BaseRenderStrategy {
 		let chars = '';
 		let segment: string | undefined;
 		let charWidth = 0;
+		let segmentLength = 1;
+		let advance = 0;
 		let y = 0;
 		let x = 0;
 		let absoluteOffsetX = 0;
 		let absoluteOffsetY = 0;
 		let tabXOffset = 0;
-		let glyph: Readonly<ITextureAtlasPageGlyph>;
+		let glyph: Readonly<ITextureAtlasPageGlyph> | undefined;
 		let cellIndex = 0;
 
 		let tokenStartIndex = 0;
@@ -347,7 +349,7 @@ export class FullFileRenderStrategy extends BaseRenderStrategy {
 			lineData = viewportData.getViewLineRenderingData(y);
 			tabXOffset = 0;
 
-			contentSegmenter = createContentSegmenter(lineData, viewLineOptions);
+			contentSegmenter = createContentSegmenter(lineData, viewLineOptions, this.glyphRasterizer.maxLigatureLength);
 			charWidth = viewLineOptions.spaceWidth * dpr;
 			absoluteOffsetX = (lineData.minColumn - 1) * charWidth;
 
@@ -376,7 +378,12 @@ export class FullFileRenderStrategy extends BaseRenderStrategy {
 
 					if (!(lineData.isBasicASCII && viewLineOptions.useMonospaceOptimizations)) {
 						charWidth = this.glyphRasterizer.getTextMetrics(chars).width;
+						segmentLength = 1;
+					} else {
+						// A ligature segment spans one column per character it contains
+						segmentLength = chars.length;
 					}
+					advance = charWidth * segmentLength;
 
 					decorationStyleSetColor = undefined;
 					decorationStyleSetBold = undefined;
@@ -477,13 +484,19 @@ export class FullFileRenderStrategy extends BaseRenderStrategy {
 							// Convert back to offset excluding x and the current character
 							tabXOffset -= x + 1;
 						} else {
-							absoluteOffsetX += charWidth;
+							absoluteOffsetX += advance;
 						}
 						continue;
 					}
 
 					const decorationStyleSetId = ViewGpuContext.decorationStyleCache.getOrCreateEntry(decorationStyleSetColor, decorationStyleSetBold, decorationStyleSetOpacity, decorationStyleSetStrikethrough, decorationStyleSetStrikethroughThickness, decorationStyleSetStrikethroughColor);
 					glyph = this._viewGpuContext.atlas.getGlyph(this.glyphRasterizer, chars, tokenMetadata, decorationStyleSetId, absoluteOffsetX);
+					if (!glyph) {
+						// The glyph could not be allocated, for example a ligature glyph that is too
+						// large for the texture atlas. Keep the column offsets consistent.
+						absoluteOffsetX += advance;
+						continue;
+					}
 
 					absoluteOffsetY = Math.round(
 						// Top of layout box (includes line height)
@@ -505,7 +518,7 @@ export class FullFileRenderStrategy extends BaseRenderStrategy {
 					cellBuffer[cellIndex + CellBufferInfo.TextureIndex] = glyph.pageIndex;
 
 					// Adjust the x pixel offset for the next character
-					absoluteOffsetX += charWidth;
+					absoluteOffsetX += advance;
 				}
 
 				tokenStartIndex = tokenEndIndex;

@@ -8,9 +8,17 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { isMacintosh } from '../../../../base/common/platform.js';
 import { StringBuilder } from '../../../common/core/stringBuilder.js';
 import { ColorId, FontStyle, TokenMetadata } from '../../../common/encodedTokenAttributes.js';
+import { TextureAtlasSlabAllocator } from '../atlas/textureAtlasSlabAllocator.js';
 import type { DecorationStyleCache } from '../css/decorationStyleCache.js';
 import { ensureNonNullable } from '../gpuUtils.js';
 import { type IBoundingBox, type IGlyphRasterizer, type IRasterizedGlyph } from './raster.js';
+
+const enum Constants {
+	/**
+	 * The hard cap on how many characters can be shaped together into a single ligature glyph.
+	 */
+	MaxLigatureLength = 3,
+}
 
 let nextId = 0;
 
@@ -21,6 +29,13 @@ export class GlyphRasterizer extends Disposable implements IGlyphRasterizer {
 	public get cacheKey(): string {
 		return `${this.fontFamily}_${this.fontSize}px`;
 	}
+
+	/**
+	 * The maximum number of characters that may be shaped together into a single glyph. This is
+	 * limited such that a font's ligature glyphs are still guaranteed to fit into a texture atlas
+	 * slab.
+	 */
+	readonly maxLigatureLength: number;
 
 	private _canvas: OffscreenCanvas;
 	private _ctx: OffscreenCanvasRenderingContext2D;
@@ -64,7 +79,38 @@ export class GlyphRasterizer extends Disposable implements IGlyphRasterizer {
 		this._ctx.textBaseline = 'top';
 		this._ctx.fillStyle = '#FFFFFF';
 		this._ctx.font = `${devicePixelFontSize}px ${this.fontFamily}`;
+
+		this.maxLigatureLength = GlyphRasterizer._computeMaxLigatureLength(this._ctx, devicePixelFontSize, this.devicePixelRatio);
+
+		// The canvas must be wide enough to fit a ligature glyph which is drawn starting at the
+		// origin (one font size in) and spans up to `maxLigatureLength` columns, plus some space for
+		// ink that overhangs the advance width on either side.
+		const canvasWidth = this._canvasWidth(devicePixelFontSize);
+		if (this._canvas.width !== canvasWidth) {
+			this._canvas.width = canvasWidth;
+			// Resizing a canvas resets its context state
+			this._ctx.textBaseline = 'top';
+			this._ctx.fillStyle = '#FFFFFF';
+			this._ctx.font = `${devicePixelFontSize}px ${this.fontFamily}`;
+		}
+
 		this._textMetrics = this._ctx.measureText('A');
+	}
+
+	private _canvasWidth(devicePixelFontSize: number): number {
+		return devicePixelFontSize * (this.maxLigatureLength + 2);
+	}
+
+	private static _computeMaxLigatureLength(ctx: OffscreenCanvasRenderingContext2D, devicePixelFontSize: number, devicePixelRatio: number): number {
+		// Ligature fonts are monospace so the advance width is a good approximation of a column
+		const advance = ctx.measureText('0').width;
+		if (advance <= 0) {
+			return 1;
+		}
+		// A ligature glyph must fit into a texture atlas slab otherwise it cannot be allocated.
+		// Reserve some space for ink that overhangs the advance width (eg. italic text).
+		const availableWidth = TextureAtlasSlabAllocator.getDefaultSlabSize(devicePixelRatio) - devicePixelFontSize / 2;
+		return Math.max(1, Math.min(Constants.MaxLigatureLength, Math.floor(availableWidth / advance)));
 	}
 
 	/**
@@ -105,10 +151,11 @@ export class GlyphRasterizer extends Disposable implements IGlyphRasterizer {
 		colorMap: string[],
 	): Readonly<IRasterizedGlyph> {
 		const devicePixelFontSize = Math.ceil(this.fontSize * this.devicePixelRatio);
-		const canvasDim = devicePixelFontSize * 3;
-		if (this._canvas.width !== canvasDim) {
-			this._canvas.width = canvasDim;
-			this._canvas.height = canvasDim;
+		const canvasWidth = this._canvasWidth(devicePixelFontSize);
+		const canvasHeight = devicePixelFontSize * 3;
+		if (this._canvas.width !== canvasWidth || this._canvas.height !== canvasHeight) {
+			this._canvas.width = canvasWidth;
+			this._canvas.height = canvasHeight;
 		}
 
 		this._ctx.save();
@@ -187,7 +234,8 @@ export class GlyphRasterizer extends Disposable implements IGlyphRasterizer {
 			}
 			// Intentionally do not apply the sub pixel x offset to
 			// strikethrough to ensure successive glyphs form a contiguous line.
-			this._ctx.fillRect(originX, strikethroughY - Math.floor(lineWidth / 2), Math.ceil(this._textMetrics.width), lineWidth);
+			const strikethroughWidth = chars.length > 1 ? this._ctx.measureText(chars).width : this._textMetrics.width;
+			this._ctx.fillRect(originX, strikethroughY - Math.floor(lineWidth / 2), Math.ceil(strikethroughWidth), lineWidth);
 		}
 
 		this._ctx.restore();

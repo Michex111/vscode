@@ -471,6 +471,13 @@ export class ViewLinesGpu extends ViewPart implements IViewLines {
 		}
 	}
 
+	/**
+	 * The maximum number of characters the glyph rasterizer shapes together to render a ligature.
+	 */
+	private _maxLigatureLength(): number {
+		return this._glyphRasterizer.value?.maxLigatureLength ?? 1;
+	}
+
 	public renderText(viewportData: ViewportData): void {
 		if (this._initialized) {
 			this._refreshRenderStrategy(viewportData);
@@ -551,7 +558,7 @@ export class ViewLinesGpu extends ViewPart implements IViewLines {
 		const content = lineData.content;
 		let contentSegmenter: IContentSegmenter | undefined;
 		if (!(lineData.isBasicASCII && viewLineOptions.useMonospaceOptimizations)) {
-			contentSegmenter = createContentSegmenter(lineData, viewLineOptions);
+			contentSegmenter = createContentSegmenter(lineData, viewLineOptions, this._maxLigatureLength());
 		}
 
 		let width = 0;
@@ -665,7 +672,7 @@ export class ViewLinesGpu extends ViewPart implements IViewLines {
 
 		let contentSegmenter: IContentSegmenter | undefined;
 		if (!(lineData.isBasicASCII && viewLineOptions.useMonospaceOptimizations)) {
-			contentSegmenter = createContentSegmenter(lineData, viewLineOptions);
+			contentSegmenter = createContentSegmenter(lineData, viewLineOptions, this._maxLigatureLength());
 		}
 
 		let chars: string | undefined = '';
@@ -755,7 +762,7 @@ export class ViewLinesGpu extends ViewPart implements IViewLines {
 		const dpr = getActiveWindow().devicePixelRatio;
 		const mouseContentHorizontalOffsetDevicePixels = mouseContentHorizontalOffset * dpr;
 		const spaceWidthDevicePixels = this._lastViewLineOptions.spaceWidth * dpr;
-		const contentSegmenter = createContentSegmenter(lineData, this._lastViewLineOptions);
+		const contentSegmenter = createContentSegmenter(lineData, this._lastViewLineOptions, this._maxLigatureLength());
 
 		let widthSoFar = 0;
 		let charWidth = 0;
@@ -779,7 +786,8 @@ export class ViewLinesGpu extends ViewPart implements IViewLines {
 				// Convert back to offset excluding x and the current character
 				tabXOffset -= x + 1;
 			} else if (lineData.isBasicASCII && this._lastViewLineOptions.useMonospaceOptimizations) {
-				charWidth = spaceWidthDevicePixels;
+				// A ligature segment spans one column per character it contains
+				charWidth = spaceWidthDevicePixels * chars.length;
 			} else {
 				charWidth = this._renderStrategy.value!.glyphRasterizer.getTextMetrics(chars).width;
 			}

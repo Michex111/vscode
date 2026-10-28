@@ -26,6 +26,14 @@ export interface TextureAtlasSlabAllocatorOptions {
  */
 export class TextureAtlasSlabAllocator implements ITextureAtlasAllocator {
 
+	/**
+	 * Gets the default size of a slab in device pixels for a given device pixel ratio. Glyphs that
+	 * are larger than this cannot be allocated and must therefore not be rendered.
+	 */
+	static getDefaultSlabSize(devicePixelRatio: number): number {
+		return 64 << Math.max(Math.floor(devicePixelRatio) - 1, 0);
+	}
+
 	private readonly _ctx: OffscreenCanvasRenderingContext2D;
 
 	private readonly _slabs: ITextureAtlasSlab[] = [];
@@ -55,7 +63,7 @@ export class TextureAtlasSlabAllocator implements ITextureAtlasAllocator {
 		}));
 
 		this._slabW = Math.min(
-			options?.slabW ?? (64 << Math.max(Math.floor(getActiveWindow().devicePixelRatio) - 1, 0)),
+			options?.slabW ?? TextureAtlasSlabAllocator.getDefaultSlabSize(getActiveWindow().devicePixelRatio),
 			this._canvas.width
 		);
 		this._slabH = Math.min(
