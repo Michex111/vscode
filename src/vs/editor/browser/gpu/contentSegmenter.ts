@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { safeIntl } from '../../../base/common/date.js';
-import type { GraphemeIterator } from '../../../base/common/strings.js';
-import { EditorFontLigatures } from '../../common/config/editorOptions.js';
-import type { IViewLineTokens } from '../../common/tokens/lineTokens.js';
-import type { ViewLineRenderingData } from '../../common/viewModel.js';
-import type { ViewLineOptions } from '../viewParts/viewLines/viewLineOptions.js';
+import { safeIntl } from "../../../base/common/date.js";
+import type { GraphemeIterator } from "../../../base/common/strings.js";
+import { EditorFontLigatures } from "../../common/config/editorOptions.js";
+import type { IViewLineTokens } from "../../common/tokens/lineTokens.js";
+import type { ViewLineRenderingData } from "../../common/viewModel.js";
+import type { ViewLineOptions } from "../viewParts/viewLines/viewLineOptions.js";
 
 export interface IContentSegmenter {
 	/**
@@ -21,11 +21,18 @@ export interface IContentSegmenter {
 	getSegmentData(index: number): Intl.SegmentData | undefined;
 }
 
-export function createContentSegmenter(lineData: ViewLineRenderingData, options: ViewLineOptions, maxLigatureLength: number): IContentSegmenter {
+export function createContentSegmenter(
+	lineData: ViewLineRenderingData,
+	options: ViewLineOptions,
+	maxLigatureLength: number,
+): IContentSegmenter {
 	if (lineData.isBasicASCII && options.useMonospaceOptimizations) {
 		// Ligatures are only supported in the monospace grid based rendering path as a ligature
 		// segment is assumed to span exactly one column per character it contains.
-		if (maxLigatureLength > 1 && options.fontLigatures !== EditorFontLigatures.OFF) {
+		if (
+			maxLigatureLength > 1 &&
+			options.fontLigatures !== EditorFontLigatures.OFF
+		) {
 			return new LigatureContentSegmenter(lineData, maxLigatureLength);
 		}
 		return new AsciiContentSegmenter(lineData);
@@ -58,7 +65,9 @@ class GraphemeContentSegmenter implements IContentSegmenter {
 
 	constructor(lineData: ViewLineRenderingData) {
 		const content = lineData.content;
-		const segmenter = safeIntl.Segmenter(undefined, { granularity: 'grapheme' }).value;
+		const segmenter = safeIntl.Segmenter(undefined, {
+			granularity: "grapheme",
+		}).value;
 		const segmentedContent = Array.from(segmenter.segment(content));
 		let segmenterIndex = 0;
 
@@ -103,7 +112,7 @@ class LigatureContentSegmenter implements IContentSegmenter {
 		this._segments = computeLigatureSegments(
 			lineData.content,
 			computeLigatureBreakAfter(lineData),
-			maxLigatureLength
+			maxLigatureLength,
 		);
 	}
 
@@ -121,7 +130,9 @@ class LigatureContentSegmenter implements IContentSegmenter {
  * `index` must not include `index + 1`. A segment cannot span a token or inline decoration
  * boundary as the entire segment is rasterized using a single token metadata and decoration style.
  */
-function computeLigatureBreakAfter(lineData: ViewLineRenderingData): Uint8Array {
+function computeLigatureBreakAfter(
+	lineData: ViewLineRenderingData,
+): Uint8Array {
 	const breakAfter = new Uint8Array(lineData.content.length);
 	markTokenBoundaries(lineData.tokens, breakAfter);
 	for (const decoration of lineData.inlineDecorations) {
@@ -134,7 +145,10 @@ function computeLigatureBreakAfter(lineData: ViewLineRenderingData): Uint8Array 
 	return breakAfter;
 }
 
-function markTokenBoundaries(tokens: IViewLineTokens, breakAfter: Uint8Array): void {
+function markTokenBoundaries(
+	tokens: IViewLineTokens,
+	breakAfter: Uint8Array,
+): void {
 	for (let i = 0, len = tokens.getCount(); i < len; i++) {
 		markBreakAfter(breakAfter, tokens.getEndOffset(i) - 1);
 	}
@@ -152,11 +166,13 @@ function markBreakAfter(breakAfter: Uint8Array, index: number): void {
  * identifiers would prevent the glyph atlas from reusing glyphs.
  */
 function isLigatureCandidate(charCode: number): boolean {
-	return charCode > 0x20 /* space */
-		&& charCode < 0x7f /* DEL */
-		&& !(charCode >= 0x30 && charCode <= 0x39) // 0-9
-		&& !(charCode >= 0x41 && charCode <= 0x5a) // A-Z
-		&& !(charCode >= 0x61 && charCode <= 0x7a); // a-z
+	return (
+		charCode > 0x20 /* space */ &&
+		charCode < 0x7f /* DEL */ &&
+		!(charCode >= 0x30 && charCode <= 0x39) && // 0-9
+		!(charCode >= 0x41 && charCode <= 0x5a) && // A-Z
+		!(charCode >= 0x61 && charCode <= 0x7a)
+	); // a-z
 }
 
 /**
@@ -165,17 +181,21 @@ function isLigatureCandidate(charCode: number): boolean {
  *
  * @internal
  */
-export function computeLigatureSegments(content: string, breakAfter: Uint8Array, maxLigatureLength: number): (string | undefined)[] {
+export function computeLigatureSegments(
+	content: string,
+	breakAfter: Uint8Array,
+	maxLigatureLength: number,
+): (string | undefined)[] {
 	const segments: (string | undefined)[] = new Array(content.length);
 	let index = 0;
 	while (index < content.length) {
 		if (isLigatureCandidate(content.charCodeAt(index))) {
 			let end = index + 1;
 			while (
-				end < content.length
-				&& end - index < maxLigatureLength
-				&& isLigatureCandidate(content.charCodeAt(end))
-				&& !breakAfter[end - 1]
+				end < content.length &&
+				end - index < maxLigatureLength &&
+				isLigatureCandidate(content.charCodeAt(end)) &&
+				!breakAfter[end - 1]
 			) {
 				end++;
 			}

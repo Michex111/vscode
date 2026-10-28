@@ -3,27 +3,41 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { getActiveWindow } from '../../../../base/browser/dom.js';
-import { Color } from '../../../../base/common/color.js';
-import { BugIndicatingError } from '../../../../base/common/errors.js';
-import { Emitter } from '../../../../base/common/event.js';
-import { CursorColumns } from '../../../common/core/cursorColumns.js';
-import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
-import { type ViewConfigurationChangedEvent, type ViewDecorationsChangedEvent, type ViewLineMappingChangedEvent, type ViewLinesChangedEvent, type ViewLinesDeletedEvent, type ViewLinesInsertedEvent, type ViewScrollChangedEvent, type ViewThemeChangedEvent, type ViewTokensChangedEvent, type ViewZonesChangedEvent } from '../../../common/viewEvents.js';
-import type { ViewportData } from '../../../common/viewLayout/viewLinesViewportData.js';
-import type { ViewLineRenderingData } from '../../../common/viewModel.js';
-import { InlineDecoration } from '../../../common/viewModel/inlineDecorations.js';
-import type { ViewContext } from '../../../common/viewModel/viewContext.js';
-import type { ViewLineOptions } from '../../viewParts/viewLines/viewLineOptions.js';
-import type { ITextureAtlasPageGlyph } from '../atlas/atlas.js';
-import { createContentSegmenter, type IContentSegmenter } from '../contentSegmenter.js';
-import { BindingId } from '../gpu.js';
-import { GPULifecycle } from '../gpuDisposable.js';
-import { quadVertices } from '../gpuUtils.js';
-import { GlyphRasterizer } from '../raster/glyphRasterizer.js';
-import { ViewGpuContext } from '../viewGpuContext.js';
-import { BaseRenderStrategy } from './baseRenderStrategy.js';
-import { fullFileRenderStrategyWgsl } from './fullFileRenderStrategy.wgsl.js';
+import { getActiveWindow } from "../../../../base/browser/dom.js";
+import { Color } from "../../../../base/common/color.js";
+import { BugIndicatingError } from "../../../../base/common/errors.js";
+import { Emitter } from "../../../../base/common/event.js";
+import { CursorColumns } from "../../../common/core/cursorColumns.js";
+import type { IViewLineTokens } from "../../../common/tokens/lineTokens.js";
+import {
+	type ViewConfigurationChangedEvent,
+	type ViewDecorationsChangedEvent,
+	type ViewLineMappingChangedEvent,
+	type ViewLinesChangedEvent,
+	type ViewLinesDeletedEvent,
+	type ViewLinesInsertedEvent,
+	type ViewScrollChangedEvent,
+	type ViewThemeChangedEvent,
+	type ViewTokensChangedEvent,
+	type ViewZonesChangedEvent,
+} from "../../../common/viewEvents.js";
+import type { ViewportData } from "../../../common/viewLayout/viewLinesViewportData.js";
+import type { ViewLineRenderingData } from "../../../common/viewModel.js";
+import { InlineDecoration } from "../../../common/viewModel/inlineDecorations.js";
+import type { ViewContext } from "../../../common/viewModel/viewContext.js";
+import type { ViewLineOptions } from "../../viewParts/viewLines/viewLineOptions.js";
+import type { ITextureAtlasPageGlyph } from "../atlas/atlas.js";
+import {
+	createContentSegmenter,
+	type IContentSegmenter,
+} from "../contentSegmenter.js";
+import { BindingId } from "../gpu.js";
+import { GPULifecycle } from "../gpuDisposable.js";
+import { quadVertices } from "../gpuUtils.js";
+import { GlyphRasterizer } from "../raster/glyphRasterizer.js";
+import { ViewGpuContext } from "../viewGpuContext.js";
+import { BaseRenderStrategy } from "./baseRenderStrategy.js";
+import { fullFileRenderStrategyWgsl } from "./fullFileRenderStrategy.wgsl.js";
 
 const enum Constants {
 	IndicesPerCell = 6,
@@ -51,7 +65,7 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 	 */
 	static readonly maxSupportedColumns = 2000;
 
-	readonly type = 'viewport';
+	readonly type = "viewport";
 	readonly wgsl: string = fullFileRenderStrategyWgsl;
 
 	private _cellBindBufferLineCapacity = Constants.CellBindBufferInitialCapacity;
@@ -74,12 +88,18 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 	get bindGroupEntries(): GPUBindGroupEntry[] {
 		return [
 			{ binding: BindingId.Cells, resource: { buffer: this._cellBindBuffer } },
-			{ binding: BindingId.ScrollOffset, resource: { buffer: this._scrollOffsetBindBuffer } }
+			{
+				binding: BindingId.ScrollOffset,
+				resource: { buffer: this._scrollOffsetBindBuffer },
+			},
 		];
 	}
 
-	private readonly _onDidChangeBindGroupEntries = this._register(new Emitter<void>());
-	readonly onDidChangeBindGroupEntries = this._onDidChangeBindGroupEntries.event;
+	private readonly _onDidChangeBindGroupEntries = this._register(
+		new Emitter<void>(),
+	);
+	readonly onDidChangeBindGroupEntries =
+		this._onDidChangeBindGroupEntries.event;
 
 	constructor(
 		context: ViewContext,
@@ -92,11 +112,13 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 		this._rebuildCellBuffer(this._cellBindBufferLineCapacity);
 
 		const scrollOffsetBufferSize = 2;
-		this._scrollOffsetBindBuffer = this._register(GPULifecycle.createBuffer(this._device, {
-			label: 'Monaco scroll offset buffer',
-			size: scrollOffsetBufferSize * Float32Array.BYTES_PER_ELEMENT,
-			usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-		})).object;
+		this._scrollOffsetBindBuffer = this._register(
+			GPULifecycle.createBuffer(this._device, {
+				label: "Monaco scroll offset buffer",
+				size: scrollOffsetBufferSize * Float32Array.BYTES_PER_ELEMENT,
+				usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+			}),
+		).object;
 		this._scrollOffsetValueBuffer = new Float32Array(scrollOffsetBufferSize);
 	}
 
@@ -104,14 +126,22 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 		this._cellBindBuffer?.destroy();
 
 		// Increase in chunks so resizing a window by hand doesn't keep allocating and throwing away
-		const lineCountWithIncrement = (Math.floor(lineCount / Constants.CellBindBufferCapacityIncrement) + 1) * Constants.CellBindBufferCapacityIncrement;
+		const lineCountWithIncrement =
+			(Math.floor(lineCount / Constants.CellBindBufferCapacityIncrement) + 1) *
+			Constants.CellBindBufferCapacityIncrement;
 
-		const bufferSize = lineCountWithIncrement * ViewportRenderStrategy.maxSupportedColumns * Constants.IndicesPerCell * Float32Array.BYTES_PER_ELEMENT;
-		this._cellBindBuffer = this._register(GPULifecycle.createBuffer(this._device, {
-			label: 'Monaco full file cell buffer',
-			size: bufferSize,
-			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-		})).object;
+		const bufferSize =
+			lineCountWithIncrement *
+			ViewportRenderStrategy.maxSupportedColumns *
+			Constants.IndicesPerCell *
+			Float32Array.BYTES_PER_ELEMENT;
+		this._cellBindBuffer = this._register(
+			GPULifecycle.createBuffer(this._device, {
+				label: "Monaco full file cell buffer",
+				size: bufferSize,
+				usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+			}),
+		).object;
 		this._cellValueBuffers = [
 			new ArrayBuffer(bufferSize),
 			new ArrayBuffer(bufferSize),
@@ -132,11 +162,15 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 	//    there are lines that used to be visible but are no longer, so those ranges must be
 	//    cleared and uploaded to the GPU.
 
-	public override onConfigurationChanged(e: ViewConfigurationChangedEvent): boolean {
+	public override onConfigurationChanged(
+		e: ViewConfigurationChangedEvent,
+	): boolean {
 		return true;
 	}
 
-	public override onDecorationsChanged(e: ViewDecorationsChangedEvent): boolean {
+	public override onDecorationsChanged(
+		e: ViewDecorationsChangedEvent,
+	): boolean {
 		return true;
 	}
 
@@ -161,9 +195,15 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 			return false;
 		}
 		const dpr = getActiveWindow().devicePixelRatio;
-		this._scrollOffsetValueBuffer[0] = (e?.scrollLeft ?? this._context.viewLayout.getCurrentScrollLeft()) * dpr;
-		this._scrollOffsetValueBuffer[1] = (e?.scrollTop ?? this._context.viewLayout.getCurrentScrollTop()) * dpr;
-		this._device.queue.writeBuffer(this._scrollOffsetBindBuffer, 0, this._scrollOffsetValueBuffer as Float32Array<ArrayBuffer>);
+		this._scrollOffsetValueBuffer[0] =
+			(e?.scrollLeft ?? this._context.viewLayout.getCurrentScrollLeft()) * dpr;
+		this._scrollOffsetValueBuffer[1] =
+			(e?.scrollTop ?? this._context.viewLayout.getCurrentScrollTop()) * dpr;
+		this._device.queue.writeBuffer(
+			this._scrollOffsetBindBuffer,
+			0,
+			this._scrollOffsetValueBuffer as Float32Array<ArrayBuffer>,
+		);
 		return true;
 	}
 
@@ -171,7 +211,9 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 		return true;
 	}
 
-	public override onLineMappingChanged(e: ViewLineMappingChangedEvent): boolean {
+	public override onLineMappingChanged(
+		e: ViewLineMappingChangedEvent,
+	): boolean {
 		return true;
 	}
 
@@ -186,7 +228,13 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 			// Zero out buffer and upload to GPU to prevent stale rows from rendering
 			const buffer = new Float32Array(this._cellValueBuffers[bufferIndex]);
 			buffer.fill(0, 0, buffer.length);
-			this._device.queue.writeBuffer(this._cellBindBuffer, 0, buffer.buffer, 0, buffer.byteLength);
+			this._device.queue.writeBuffer(
+				this._cellBindBuffer,
+				0,
+				buffer.buffer,
+				0,
+				buffer.byteLength,
+			);
 		}
 		this._lastViewportLineCount = 0;
 	}
@@ -197,7 +245,7 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 		// avoid potential additional blocking time in garbage collector which is a common cause of
 		// dropped frames.
 
-		let chars = '';
+		let chars = "";
 		let segment: string | undefined;
 		let charWidth = 0;
 		let segmentLength = 1;
@@ -237,16 +285,27 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 		}
 
 		// Zero out cell buffer or rebuild if needed
-		if (this._cellBindBufferLineCapacity < viewportData.endLineNumber - viewportData.startLineNumber + 1) {
-			this._rebuildCellBuffer(viewportData.endLineNumber - viewportData.startLineNumber + 1);
+		if (
+			this._cellBindBufferLineCapacity <
+			viewportData.endLineNumber - viewportData.startLineNumber + 1
+		) {
+			this._rebuildCellBuffer(
+				viewportData.endLineNumber - viewportData.startLineNumber + 1,
+			);
 		}
-		const cellBuffer = new Float32Array(this._cellValueBuffers[this._activeDoubleBufferIndex]);
+		const cellBuffer = new Float32Array(
+			this._cellValueBuffers[this._activeDoubleBufferIndex],
+		);
 		cellBuffer.fill(0);
 
-		const lineIndexCount = ViewportRenderStrategy.maxSupportedColumns * Constants.IndicesPerCell;
+		const lineIndexCount =
+			ViewportRenderStrategy.maxSupportedColumns * Constants.IndicesPerCell;
 
-		for (y = viewportData.startLineNumber; y <= viewportData.endLineNumber; y++) {
-
+		for (
+			y = viewportData.startLineNumber;
+			y <= viewportData.endLineNumber;
+			y++
+		) {
 			// Only attempt to render lines that the GPU renderer can handle
 			if (!this._viewGpuContext.canRender(viewLineOptions, viewportData, y)) {
 				continue;
@@ -255,14 +314,22 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 			lineData = viewportData.getViewLineRenderingData(y);
 			tabXOffset = 0;
 
-			contentSegmenter = createContentSegmenter(lineData, viewLineOptions, this.glyphRasterizer.maxLigatureLength);
+			contentSegmenter = createContentSegmenter(
+				lineData,
+				viewLineOptions,
+				this.glyphRasterizer.maxLigatureLength,
+			);
 			charWidth = viewLineOptions.spaceWidth * dpr;
 			absoluteOffsetX = (lineData.minColumn - 1) * charWidth;
 
 			tokens = lineData.tokens;
 			tokenStartIndex = lineData.minColumn - 1;
 			tokenEndIndex = 0;
-			for (let tokenIndex = 0, tokensLen = tokens.getCount(); tokenIndex < tokensLen; tokenIndex++) {
+			for (
+				let tokenIndex = 0, tokensLen = tokens.getCount();
+				tokenIndex < tokensLen;
+				tokenIndex++
+			) {
 				tokenEndIndex = tokens.getEndOffset(tokenIndex);
 				if (tokenEndIndex <= tokenStartIndex) {
 					// The faux indent part of the line should have no token type
@@ -282,7 +349,9 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 					}
 					chars = segment;
 
-					if (!(lineData.isBasicASCII && viewLineOptions.useMonospaceOptimizations)) {
+					if (!(
+						lineData.isBasicASCII && viewLineOptions.useMonospaceOptimizations
+					)) {
 						charWidth = this.glyphRasterizer.getTextMetrics(chars).width;
 						segmentLength = 1;
 					} else {
@@ -303,29 +372,38 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 						// This is Range.strictContainsPosition except it works at the cell level,
 						// it's also inlined to avoid overhead.
 						if (
-							(y < decoration.range.startLineNumber || y > decoration.range.endLineNumber) ||
-							(y === decoration.range.startLineNumber && x < decoration.range.startColumn - 1) ||
-							(y === decoration.range.endLineNumber && x >= decoration.range.endColumn - 1)
+							y < decoration.range.startLineNumber ||
+							y > decoration.range.endLineNumber ||
+							(y === decoration.range.startLineNumber &&
+								x < decoration.range.startColumn - 1) ||
+							(y === decoration.range.endLineNumber &&
+								x >= decoration.range.endColumn - 1)
 						) {
 							continue;
 						}
 
-						const rules = ViewGpuContext.decorationCssRuleExtractor.getStyleRules(this._viewGpuContext.canvas.domNode, decoration.inlineClassName);
+						const rules =
+							ViewGpuContext.decorationCssRuleExtractor.getStyleRules(
+								this._viewGpuContext.canvas.domNode,
+								decoration.inlineClassName,
+							);
 						for (const rule of rules) {
 							for (const r of rule.style) {
-								const value = rule.styleMap.get(r)?.toString() ?? '';
+								const value = rule.styleMap.get(r)?.toString() ?? "";
 								switch (r) {
-									case 'color': {
+									case "color": {
 										// TODO: This parsing and error handling should move into canRender so fallback
 										//       to DOM works
 										const parsedColor = Color.Format.CSS.parse(value);
 										if (!parsedColor) {
-											throw new BugIndicatingError('Invalid color format ' + value);
+											throw new BugIndicatingError(
+												"Invalid color format " + value,
+											);
 										}
 										decorationStyleSetColor = parsedColor.toNumber32Bit();
 										break;
 									}
-									case 'font-weight': {
+									case "font-weight": {
 										const parsedValue = parseCssFontWeight(value);
 										if (parsedValue >= 400) {
 											decorationStyleSetBold = true;
@@ -336,56 +414,77 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 										}
 										break;
 									}
-									case 'opacity': {
+									case "opacity": {
 										const parsedValue = parseCssOpacity(value);
 										decorationStyleSetOpacity = parsedValue;
 										break;
 									}
-									case 'text-decoration':
-									case 'text-decoration-line': {
-										if (value === 'line-through') {
+									case "text-decoration":
+									case "text-decoration-line": {
+										if (value === "line-through") {
 											decorationStyleSetStrikethrough = true;
 										}
 										break;
 									}
-									case 'text-decoration-thickness': {
+									case "text-decoration-thickness": {
 										const match = value.match(/^(\d+(?:\.\d+)?)px$/);
 										if (match) {
-											decorationStyleSetStrikethroughThickness = parseFloat(match[1]);
+											decorationStyleSetStrikethroughThickness = parseFloat(
+												match[1],
+											);
 										}
 										break;
 									}
-									case 'text-decoration-color': {
+									case "text-decoration-color": {
 										let colorValue = value;
-										const varMatch = value.match(/^var\((--[^,]+),\s*(?:initial|inherit)\)$/);
+										const varMatch = value.match(
+											/^var\((--[^,]+),\s*(?:initial|inherit)\)$/,
+										);
 										if (varMatch) {
-											colorValue = ViewGpuContext.decorationCssRuleExtractor.resolveCssVariable(this._viewGpuContext.canvas.domNode, varMatch[1]);
+											colorValue =
+												ViewGpuContext.decorationCssRuleExtractor.resolveCssVariable(
+													this._viewGpuContext.canvas.domNode,
+													varMatch[1],
+												);
 										}
 										const parsedColor = Color.Format.CSS.parse(colorValue);
 										if (parsedColor) {
-											decorationStyleSetStrikethroughColor = parsedColor.toNumber32Bit();
+											decorationStyleSetStrikethroughColor =
+												parsedColor.toNumber32Bit();
 										}
 										break;
 									}
-									case 'text-decoration-style': {
+									case "text-decoration-style": {
 										// These are validated in canRender and use default behavior
 										break;
 									}
-									default: throw new BugIndicatingError('Unexpected inline decoration style');
+									default:
+										throw new BugIndicatingError(
+											"Unexpected inline decoration style",
+										);
 								}
 							}
 						}
 					}
 
-					if (chars === ' ' || chars === '\t') {
+					if (chars === " " || chars === "\t") {
 						// Zero out glyph to ensure it doesn't get rendered
-						cellIndex = ((y - 1) * ViewportRenderStrategy.maxSupportedColumns + x) * Constants.IndicesPerCell;
-						cellBuffer.fill(0, cellIndex, cellIndex + CellBufferInfo.FloatsPerEntry);
+						cellIndex =
+							((y - 1) * ViewportRenderStrategy.maxSupportedColumns + x) *
+							Constants.IndicesPerCell;
+						cellBuffer.fill(
+							0,
+							cellIndex,
+							cellIndex + CellBufferInfo.FloatsPerEntry,
+						);
 						// Adjust xOffset for tab stops
-						if (chars === '\t') {
+						if (chars === "\t") {
 							// Find the pixel offset between the current position and the next tab stop
 							const offsetBefore = x + tabXOffset;
-							tabXOffset = CursorColumns.nextRenderTabStop(x + tabXOffset, lineData.tabSize);
+							tabXOffset = CursorColumns.nextRenderTabStop(
+								x + tabXOffset,
+								lineData.tabSize,
+							);
 							absoluteOffsetX += charWidth * (tabXOffset - offsetBefore);
 							// Convert back to offset excluding x and the current character
 							tabXOffset -= x + 1;
@@ -395,8 +494,22 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 						continue;
 					}
 
-					const decorationStyleSetId = ViewGpuContext.decorationStyleCache.getOrCreateEntry(decorationStyleSetColor, decorationStyleSetBold, decorationStyleSetOpacity, decorationStyleSetStrikethrough, decorationStyleSetStrikethroughThickness, decorationStyleSetStrikethroughColor);
-					glyph = this._viewGpuContext.atlas.getGlyph(this.glyphRasterizer, chars, tokenMetadata, decorationStyleSetId, absoluteOffsetX);
+					const decorationStyleSetId =
+						ViewGpuContext.decorationStyleCache.getOrCreateEntry(
+							decorationStyleSetColor,
+							decorationStyleSetBold,
+							decorationStyleSetOpacity,
+							decorationStyleSetStrikethrough,
+							decorationStyleSetStrikethroughThickness,
+							decorationStyleSetStrikethroughColor,
+						);
+					glyph = this._viewGpuContext.atlas.getGlyph(
+						this.glyphRasterizer,
+						chars,
+						tokenMetadata,
+						decorationStyleSetId,
+						absoluteOffsetX,
+					);
 					if (!glyph) {
 						// The glyph could not be allocated, for example a ligature glyph that is too
 						// large for the texture atlas. Keep the column offsets consistent.
@@ -406,19 +519,30 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 
 					absoluteOffsetY = Math.round(
 						// Top of layout box (includes line height)
-						viewportData.relativeVerticalOffset[y - viewportData.startLineNumber] * dpr +
-
-						// Delta from top of layout box (includes line height) to top of the inline box (no line height)
-						Math.floor((viewportData.lineHeight * dpr - (glyph.fontBoundingBoxAscent + glyph.fontBoundingBoxDescent)) / 2) +
-
-						// Delta from top of inline box (no line height) to top of glyph origin. If the glyph was drawn
-						// with a top baseline for example, this ends up drawing the glyph correctly using the alphabetical
-						// baseline.
-						glyph.fontBoundingBoxAscent
+						viewportData.relativeVerticalOffset[
+							y - viewportData.startLineNumber
+						] *
+							dpr +
+							// Delta from top of layout box (includes line height) to top of the inline box (no line height)
+							Math.floor(
+								(viewportData.lineHeight * dpr -
+									(glyph.fontBoundingBoxAscent +
+										glyph.fontBoundingBoxDescent)) /
+									2,
+							) +
+							// Delta from top of inline box (no line height) to top of glyph origin. If the glyph was drawn
+							// with a top baseline for example, this ends up drawing the glyph correctly using the alphabetical
+							// baseline.
+							glyph.fontBoundingBoxAscent,
 					);
 
-					cellIndex = ((y - viewportData.startLineNumber) * ViewportRenderStrategy.maxSupportedColumns + x) * Constants.IndicesPerCell;
-					cellBuffer[cellIndex + CellBufferInfo.Offset_X] = Math.floor(absoluteOffsetX);
+					cellIndex =
+						((y - viewportData.startLineNumber) *
+							ViewportRenderStrategy.maxSupportedColumns +
+							x) *
+						Constants.IndicesPerCell;
+					cellBuffer[cellIndex + CellBufferInfo.Offset_X] =
+						Math.floor(absoluteOffsetX);
 					cellBuffer[cellIndex + CellBufferInfo.Offset_Y] = absoluteOffsetY;
 					cellBuffer[cellIndex + CellBufferInfo.GlyphIndex] = glyph.glyphIndex;
 					cellBuffer[cellIndex + CellBufferInfo.TextureIndex] = glyph.pageIndex;
@@ -431,13 +555,23 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 			}
 
 			// Clear to end of line
-			fillStartIndex = ((y - viewportData.startLineNumber) * ViewportRenderStrategy.maxSupportedColumns + tokenEndIndex) * Constants.IndicesPerCell;
-			fillEndIndex = ((y - viewportData.startLineNumber) * ViewportRenderStrategy.maxSupportedColumns) * Constants.IndicesPerCell;
+			fillStartIndex =
+				((y - viewportData.startLineNumber) *
+					ViewportRenderStrategy.maxSupportedColumns +
+					tokenEndIndex) *
+				Constants.IndicesPerCell;
+			fillEndIndex =
+				(y - viewportData.startLineNumber) *
+				ViewportRenderStrategy.maxSupportedColumns *
+				Constants.IndicesPerCell;
 			cellBuffer.fill(0, fillStartIndex, fillEndIndex);
 		}
 
-		const visibleObjectCount = (viewportData.endLineNumber - viewportData.startLineNumber + 1) * lineIndexCount;
-		const viewportLineCount = viewportData.endLineNumber - viewportData.startLineNumber + 1;
+		const visibleObjectCount =
+			(viewportData.endLineNumber - viewportData.startLineNumber + 1) *
+			lineIndexCount;
+		const viewportLineCount =
+			viewportData.endLineNumber - viewportData.startLineNumber + 1;
 
 		// This render strategy always uploads the whole viewport
 		this._device.queue.writeBuffer(
@@ -445,21 +579,23 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 			0,
 			cellBuffer.buffer,
 			0,
-			visibleObjectCount * Float32Array.BYTES_PER_ELEMENT
+			visibleObjectCount * Float32Array.BYTES_PER_ELEMENT,
 		);
 
 		// Clear stale lines in GPU buffer if viewport shrunk
 		if (viewportLineCount < this._lastViewportLineCount) {
 			const staleLineCount = this._lastViewportLineCount - viewportLineCount;
-			const staleStartOffset = visibleObjectCount * Float32Array.BYTES_PER_ELEMENT;
-			const staleByteCount = staleLineCount * lineIndexCount * Float32Array.BYTES_PER_ELEMENT;
+			const staleStartOffset =
+				visibleObjectCount * Float32Array.BYTES_PER_ELEMENT;
+			const staleByteCount =
+				staleLineCount * lineIndexCount * Float32Array.BYTES_PER_ELEMENT;
 			// Write zeros from the zeroed cellBuffer for the stale region
 			this._device.queue.writeBuffer(
 				this._cellBindBuffer,
 				staleStartOffset,
 				cellBuffer.buffer,
 				visibleObjectCount * Float32Array.BYTES_PER_ELEMENT,
-				staleByteCount
+				staleByteCount,
 			);
 		}
 		this._lastViewportLineCount = viewportLineCount;
@@ -473,7 +609,7 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 
 	draw(pass: GPURenderPassEncoder, viewportData: ViewportData): void {
 		if (this._visibleObjectCount <= 0) {
-			throw new BugIndicatingError('Attempt to draw 0 objects');
+			throw new BugIndicatingError("Attempt to draw 0 objects");
 		}
 		pass.draw(quadVertices.length / 2, this._visibleObjectCount);
 	}
@@ -481,16 +617,18 @@ export class ViewportRenderStrategy extends BaseRenderStrategy {
 
 function parseCssFontWeight(value: string) {
 	switch (value) {
-		case 'lighter':
-		case 'normal': return 400;
-		case 'bolder':
-		case 'bold': return 700;
+		case "lighter":
+		case "normal":
+			return 400;
+		case "bolder":
+		case "bold":
+			return 700;
 	}
 	return parseInt(value);
 }
 
 function parseCssOpacity(value: string): number {
-	if (value.endsWith('%')) {
+	if (value.endsWith("%")) {
 		return parseFloat(value.substring(0, value.length - 1)) / 100;
 	}
 	if (value.match(/^\d+(?:\.\d*)/)) {
